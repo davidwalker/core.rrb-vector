@@ -674,73 +674,70 @@
             (let [child (aget arr i)]
               (recur (inc i) (+ sbc (slot-count child cs))))))))))
 
-(defn leaf-seq [arr]
-  (into [] (comp (take-while (complement nil?))
-                 (take 32)
-                 (map #(.-arr %))
-                 cat)
-        arr))
+(let [xf (comp (take-while (complement nil?))
+               (take 32)
+               (map #(.-arr %))
+               cat)]
+  (defn leaf-seq [arr]
+    (into [] xf arr)))
 
-(defn rebalance-leaves
-  [n1 cnt1 n2 cnt2 transferred-leaves]
-  (let [slc1 (slot-count n1 5)
-        slc2 (slot-count n2 5)
-        a    (+ slc1 slc2)
-        sbc1 (subtree-branch-count n1 5)
-        sbc2 (subtree-branch-count n2 5)
-        p    (+ sbc1 sbc2)
-        e    (- a (inc (quot (dec p) 32)))]
-    (cond
-      (<= e max-extra-search-steps)
-      (array n1 n2)
+(let [xf1 (comp (map #(leaf-seq (.-arr %)))
+                cat
+                (partition-all 32))]
+  (defn rebalance-leaves
+    [n1 cnt1 n2 cnt2 transferred-leaves]
+    (let [slc1 (slot-count n1 5)
+          slc2 (slot-count n2 5)
+          a    (+ slc1 slc2)
+          sbc1 (subtree-branch-count n1 5)
+          sbc2 (subtree-branch-count n2 5)
+          p    (+ sbc1 sbc2)
+          e    (- a (inc (quot (dec p) 32)))]
+      (cond
+        (<= e max-extra-search-steps)
+        (array n1 n2)
 
-      (<= (+ sbc1 sbc2) 1024)
-      (let [reg?    (zero? (mod p 32))
-            new-arr (make-array (if reg? 32 33))
-            new-n1  (->VectorNode nil new-arr)]
-        (loop [i  0
-               bs (into [] (comp (map #(leaf-seq (.-arr %)))
-                                 cat
-                                 (partition-all 32))
-                        [n1 n2])]
-          (when-first [block bs]
-            (let [a (make-array (count block))]
-              (loop [i 0 xs (seq block)]
-                (when xs
-                  (aset a i (first xs))
-                  (recur (inc i) (next xs))))
-              (aset new-arr i (->VectorNode nil a))
-              (recur (inc i) (next bs)))))
-        (if-not reg?
-          (aset new-arr 32 (regular-ranges 5 p)))
-        (set! (.-val transferred-leaves) sbc2)
-        (array new-n1 nil))
+        (<= (+ sbc1 sbc2) 1024)
+        (let [reg?    (zero? (mod p 32))
+              new-arr (make-array (if reg? 32 33))
+              new-n1  (->VectorNode nil new-arr)]
+          (loop [i  0
+                 bs (into [] xf1 [n1 n2])]
+            (when-first [block bs]
+              (let [a (make-array (count block))]
+                (loop [i 0 xs (seq block)]
+                  (when xs
+                    (aset a i (first xs))
+                    (recur (inc i) (next xs))))
+                (aset new-arr i (->VectorNode nil a))
+                (recur (inc i) (next bs)))))
+          (if-not reg?
+            (aset new-arr 32 (regular-ranges 5 p)))
+          (set! (.-val transferred-leaves) sbc2)
+          (array new-n1 nil))
 
-      :else
-      (let [reg?     (zero? (mod p 32))
-            new-arr1 (make-array 32)
-            new-arr2 (make-array (if reg? 32 33))
-            new-n1   (->VectorNode nil new-arr1)
-            new-n2   (->VectorNode nil new-arr2)]
-        (loop [i  0
-               bs (into [] (comp (map #(leaf-seq (.-arr %)))
-                                 cat
-                                 (partition-all 32))
-                        [n1 n2])]
-          (when-first [block bs]
-            (let [a (make-array (count block))]
-              (loop [i 0 xs (seq block)]
-                (when xs
-                  (aset a i (first xs))
-                  (recur (inc i) (next xs))))
-              (if (< i 32)
-                (aset new-arr1 i (->VectorNode nil a))
-                (aset new-arr2 (- i 32) (->VectorNode nil a)))
-              (recur (inc i) (next bs)))))
-        (if-not reg?
-          (aset new-arr2 32 (regular-ranges 5 (- p 1024))))
-        (set! (.-val transferred-leaves) (- 1024 sbc1))
-        (array new-n1 new-n2)))))
+        :else
+        (let [reg?     (zero? (mod p 32))
+              new-arr1 (make-array 32)
+              new-arr2 (make-array (if reg? 32 33))
+              new-n1   (->VectorNode nil new-arr1)
+              new-n2   (->VectorNode nil new-arr2)]
+          (loop [i  0
+                 bs (into [] xf1 [n1 n2])]
+            (when-first [block bs]
+              (let [a (make-array (count block))]
+                (loop [i 0 xs (seq block)]
+                  (when xs
+                    (aset a i (first xs))
+                    (recur (inc i) (next xs))))
+                (if (< i 32)
+                  (aset new-arr1 i (->VectorNode nil a))
+                  (aset new-arr2 (- i 32) (->VectorNode nil a)))
+                (recur (inc i) (next bs)))))
+          (if-not reg?
+            (aset new-arr2 32 (regular-ranges 5 (- p 1024))))
+          (set! (.-val transferred-leaves) (- 1024 sbc1))
+          (array new-n1 new-n2))))))
 
 (defn child-seq [node shift cnt]
   (let [arr  (.-arr node)
@@ -927,19 +924,19 @@
 (def peephole-optimization-config (atom {:debug-fn nil}))
 (def peephole-optimization-count (atom 0))
 
-(defn child-nodes [node]
-  (into [] (comp (take-while (complement nil?))
-                 (take 32))
-        (.-arr node)))
+(let [xf (comp (take-while (complement nil?))
+               (take 32))]
+  (defn child-nodes [node]
+    (into [] xf (.-arr node))))
 
 ;; (take 33) is just a technique to avoid generating more
-;; grandchildren than necessary.  If there are at least 33, we do not
+;; grandchildren than necessary.  if there are at least 33, we do not
 ;; care how many there are.
-(defn bounded-grandchildren [children]
-  (into [] (comp (map child-nodes)
-                 cat
-                 (take 33))
-        children))
+(let [xf (comp (map child-nodes)
+               cat
+               (take 33))]
+  (defn bounded-grandchildren [children]
+    (into [] xf children)))
 
 ;; TBD: Do functions like last-non-nil-idx and
 ;; count-vector-elements-beneath already exist elsewhere in this
